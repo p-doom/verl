@@ -29,8 +29,6 @@ From: nvcr.io/nvidia/pytorch:24.08-py3
     } > /etc/apt/sources.list
 
     echo ">>> Installing base dependencies (git, wget, systemd, tini)..."
-    # Note: Full systemd install inside container might be heavy/unnecessary.
-    # Tini is usually sufficient as an init process. Included for Dockerfile parity.
     apt-get update && apt-get install -y --no-install-recommends \
         git \
         wget \
@@ -96,8 +94,7 @@ From: nvcr.io/nvidia/pytorch:24.08-py3
     rm "${FLASH_ATTN_WHEEL}"
 
     echo ">>> Installing FlashInfer (v0.2.2.post1)..."
-    # NOTE: Using cp310 wheel for Python 3.10 base image. Dockerfile had incorrect cp38 wheel.
-    FLASHINFER_URL="https://github.com/flashinfer-ai/flashinfer/releases/download/v0.2.2.post1/flashinfer_python-0.2.2.post1+cu124torch2.6-cp310-cp310-linux_x86_64.whl"
+    FLASHINFER_URL="https://github.com/flashinfer-ai/flashinfer/releases/download/v0.2.2.post1/flashinfer_python-0.2.2.post1+cu124torch2.6-cp38-abi3-linux_x86_64.whl"
     FLASHINFER_WHEEL=$(basename "${FLASHINFER_URL}")
     wget -nv "${FLASHINFER_URL}"
     pip3 install --no-cache-dir "${FLASHINFER_WHEEL}"
@@ -105,7 +102,6 @@ From: nvcr.io/nvidia/pytorch:24.08-py3
 
     echo ">>> Fixing/Updating specific package versions..."
     pip3 uninstall -y pynvml nvidia-ml-py || echo "pynvml/nvidia-ml-py might not be installed, continuing..."
-    # Note: Use pip3 install --upgrade instead of uninstall/install if preferred
     pip3 install --no-cache-dir --upgrade \
         "nvidia-ml-py>=12.560.30" \
         "fastapi[standard]>=0.115.0" \
@@ -143,8 +139,8 @@ From: nvcr.io/nvidia/pytorch:24.08-py3
     exec "$@"
 
 %labels
-    Maintainer "Your Name <your.email@example.com>" # Please update Maintainer info
-    Version "ngc-pytorch24.08-vllm0.8.3" # Example version string
+    Maintainer "Franz Srambical <franz@pdoom.org>"
+    Version "ngc-pytorch24.08-vllm0.8.3"
     Base.Image "nvcr.io/nvidia/pytorch:24.08-py3"
     VLLM.Version "0.8.3"
     Torch.Version "2.6.0+cu124"

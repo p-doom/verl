@@ -94,7 +94,14 @@ From: nvcr.io/nvidia/pytorch:24.05-py3
     echo ">>> Apptainer setup complete."
 
 %environment
-    # Optional: Set any environment variables needed at runtime.
+    # Environment variables from the Dockerfile
+    export MAX_JOBS="32" # Primarily a build-time hint in the Dockerfile, may or may not be used at runtime
+    export VLLM_WORKER_MULTIPROC_METHOD="spawn"
+    # DEBIAN_FRONTEND=noninteractive # Set in %post for build, usually not needed at runtime
+    export NODE_OPTIONS="" # If nodejs is used
+    export PIP_ROOT_USER_ACTION="ignore"
+    export HF_HUB_ENABLE_HF_TRANSFER="1"
+    # Inherit PATH, LD_LIBRARY_PATH etc from the base image by default
 
 %runscript
     echo "Container based on nvcr.io/nvidia/pytorch:24.05-py3 with vLLM, Apex, TE."
