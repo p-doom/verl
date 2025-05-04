@@ -1,0 +1,152 @@
+# Apptainer definition file based on the provided Dockerfile for verl + vllm 0.8.3
+# Original Dockerfile source: User provided
+# Target: NVIDIA CUDA environment with PyTorch 2.6.0, vLLM 0.8.3, specific FlashAttention/FlashInfer
+
+Bootstrap: docker
+From: nvcr.io/nvidia/pytorch:24.08-py3
+
+%help
+    This container is based on nvcr.io/nvidia/pytorch:24.08-py3.
+    It installs verl with vLLM 0.8.3, PyTorch 2.6.0 (cu124, cxx11abi=False),
+    FlashAttention 2.7.4.post1, FlashInfer 0.2.2.post1, and other dependencies
+    as defined in the source Dockerfile.
+
+%post
+    set -e # Exit immediately if a command exits with a non-zero status.
+    export DEBIAN_FRONTEND=noninteractive
+
+    # Define sources - use ARG defaults from Dockerfile
+    APT_SOURCE="https://mirrors.tuna.tsinghua.edu.cn/ubuntu/"
+    PIP_INDEX="https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple"
+
+    echo ">>> Setting APT sources to: ${APT_SOURCE}"
+    cp /etc/apt/sources.list /etc/apt/sources.list.bak && \
+    { \
+    echo "deb ${APT_SOURCE} jammy main restricted universe multiverse"; \
+    echo "deb ${APT_SOURCE} jammy-updates main restricted universe multiverse"; \
+    echo "deb ${APT_SOURCE} jammy-backports main restricted universe multiverse"; \
+    echo "deb ${APT_SOURCE} jammy-security main restricted universe multiverse"; \
+    } > /etc/apt/sources.list
+
+    echo ">>> Installing base dependencies (git, wget, systemd, tini)..."
+    # Note: Full systemd install inside container might be heavy/unnecessary.
+    # Tini is usually sufficient as an init process. Included for Dockerfile parity.
+    apt-get update && apt-get install -y --no-install-recommends \
+        git \
+        wget \
+        ca-certificates \
+        tini \
+        -o Dpkg::Options::="--force-confdef" systemd \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+    echo ">>> Configuring pip source to: ${PIP_INDEX}"
+    pip3 config set global.index-url "${PIP_INDEX}"
+    pip3 config set global.extra-index-url "${PIP_INDEX}" # Often same as index-url for mirrors
+    python3 -m pip install --upgrade pip
+
+    echo ">>> Uninstalling conflicting packages from base image..."
+    # Use || true to prevent build failure if a package is not installed
+    pip3 uninstall -y torch torchvision torchaudio \
+        pytorch-quantization pytorch-triton torch-tensorrt \
+        xgboost transformer_engine flash_attn apex megatron-core grpcio || echo "Some packages might not have been installed, continuing..."
+
+    # Install torch first with specific CUDA/ABI version to match flash* requirements
+    # torch-2.6.0+cu124 matches cxx11abi=False requirement
+    echo ">>> Installing specific PyTorch versions (2.6.0+cu124)..."
+    pip3 install --no-cache-dir --index-url https://download.pytorch.org/whl/cu124 \
+        "torch==2.6.0+cu124" \
+        "torchvision==0.21.0+cu124" \
+        "torchaudio==2.6.0+cu124"
+
+    echo ">>> Installing vLLM and core dependencies..."
+    pip3 install --no-cache-dir \
+        "vllm==0.8.3" \
+        "tensordict==0.6.2" \
+        torchdata \
+        "transformers[hf_xet]>=4.51.0" \
+        accelerate \
+        datasets \
+        peft \
+        hf-transfer \
+        "numpy<2.0.0" \
+        "pyarrow>=15.0.0" \
+        pandas \
+        ray[default] \
+        codetiming \
+        hydra-core \
+        pylatexenc \
+        qwen-vl-utils \
+        wandb \
+        dill \
+        pybind11 \
+        liger-kernel \
+        mathruler \
+        pytest \
+        py-spy \
+        pyext \
+        pre-commit \
+        ruff
+
+    echo ">>> Installing Flash Attention (v2.7.4.post1)..."
+    FLASH_ATTN_URL="https://github.com/Dao-AILab/flash-attention/releases/download/v2.7.4.post1/flash_attn-2.7.4.post1+cu12torch2.6cxx11abiFALSE-cp310-cp310-linux_x86_64.whl"
+    FLASH_ATTN_WHEEL=$(basename "${FLASH_ATTN_URL}")
+    wget -nv "${FLASH_ATTN_URL}"
+    pip3 install --no-cache-dir "${FLASH_ATTN_WHEEL}"
+    rm "${FLASH_ATTN_WHEEL}"
+
+    echo ">>> Installing FlashInfer (v0.2.2.post1)..."
+    # NOTE: Using cp310 wheel for Python 3.10 base image. Dockerfile had incorrect cp38 wheel.
+    FLASHINFER_URL="https://github.com/flashinfer-ai/flashinfer/releases/download/v0.2.2.post1/flashinfer_python-0.2.2.post1+cu124torch2.6-cp310-cp310-linux_x86_64.whl"
+    FLASHINFER_WHEEL=$(basename "${FLASHINFER_URL}")
+    wget -nv "${FLASHINFER_URL}"
+    pip3 install --no-cache-dir "${FLASHINFER_WHEEL}"
+    rm "${FLASHINFER_WHEEL}"
+
+    echo ">>> Fixing/Updating specific package versions..."
+    pip3 uninstall -y pynvml nvidia-ml-py || echo "pynvml/nvidia-ml-py might not be installed, continuing..."
+    # Note: Use pip3 install --upgrade instead of uninstall/install if preferred
+    pip3 install --no-cache-dir --upgrade \
+        "nvidia-ml-py>=12.560.30" \
+        "fastapi[standard]>=0.115.0" \
+        "optree>=0.13.0" \
+        "pydantic>=2.9" \
+        "grpcio>=1.62.1" # Make sure grpcio is present/updated
+
+    echo ">>> Installing verl[vllm]..."
+    pip3 install --no-cache-dir verl[vllm] -U
+
+    echo ">>> Resetting pip config..."
+    pip3 config unset global.index-url || echo "Global index-url not set."
+    pip3 config unset global.extra-index-url || echo "Global extra-index-url not set."
+
+    echo ">>> Cleaning up pip cache..."
+    rm -rf /root/.cache/pip
+
+    echo ">>> Apptainer setup complete."
+
+%environment
+    # Environment variables from the Dockerfile
+    export MAX_JOBS="32" # Primarily a build-time hint in the Dockerfile, may or may not be used at runtime
+    export VLLM_WORKER_MULTIPROC_METHOD="spawn"
+    # DEBIAN_FRONTEND=noninteractive # Set in %post for build, usually not needed at runtime
+    export NODE_OPTIONS="" # If nodejs is used
+    export PIP_ROOT_USER_ACTION="ignore"
+    export HF_HUB_ENABLE_HF_TRANSFER="1"
+    # Inherit PATH, LD_LIBRARY_PATH etc from the base image by default
+
+%runscript
+    echo "Container based on nvcr.io/nvidia/pytorch:24.08-py3 with verl and vLLM 0.8.3."
+    echo "Run your commands here, e.g., python your_script.py"
+    # Use tini as the default entrypoint if running services, or just execute command
+    # Example: exec /usr/bin/tini -g -- "$@"
+    exec "$@"
+
+%labels
+    Maintainer "Your Name <your.email@example.com>" # Please update Maintainer info
+    Version "ngc-pytorch24.08-vllm0.8.3" # Example version string
+    Base.Image "nvcr.io/nvidia/pytorch:24.08-py3"
+    VLLM.Version "0.8.3"
+    Torch.Version "2.6.0+cu124"
+    FlashAttention.Version "2.7.4.post1"
+    FlashInfer.Version "0.2.2.post1"
