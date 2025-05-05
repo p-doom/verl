@@ -1,4 +1,3 @@
-import random
 import re
 
 
@@ -68,42 +67,23 @@ def compute_score(solution_str, ground_truth, method="strict", format_score=0.1,
     numbers = ground_truth["numbers"]
 
     equation = extract_solution(solution_str=solution_str)
-    do_print = random.randint(1, 64) == 1
-
-    if do_print:
-        print("--------------------------------")
-        print(f"Target: {target} | Numbers: {numbers}")
-        print(f"Extracted equation: {equation}")
-        print(f"Solution string: {solution_str}")
 
     if equation is None:
-        if do_print:
-            print("No equation found")
         return 0
 
     # Validate equation uses correct numbers
     if not validate_equation(equation, numbers):
-        if do_print:
-            print("Invalid equation")
         return format_score
 
     # Evaluate equation
     try:
         result = evaluate_equation(equation)
         if result is None:
-            if do_print:
-                print("Could not evaluate equation")
             return format_score
 
         if abs(result - target) < 1e-5:  # Account for floating point precision
-            if do_print:
-                print(f"Correct equation: {equation} = {result}")
             return score
         else:
-            if do_print:
-                print(f"Wrong result: equation = {result}, target = {target}")
             return format_score
     except Exception:
-        if do_print:
-            print("Error evaluating equation")
         return format_score
