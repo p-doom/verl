@@ -1,0 +1,117 @@
+# Apptainer definition file based on verlai/verl:ngc-th2.4.0-cu124-vllm0.6.3-ray2.4-te1.7-v0.0.6
+# Original Dockerfile source: User provided
+# Target: NVIDIA CUDA environment with specific package versions
+
+Bootstrap: docker
+From: nvcr.io/nvidia/pytorch:24.05-py3
+
+%help
+    This container is based on nvcr.io/nvidia/pytorch:24.05-py3.
+    It includes specific versions of PyTorch, vLLM, Ray, Apex, Transformer Engine,
+    and other dependencies as defined in the original Dockerfile for
+    verlai/verl:ngc-th2.4.0-cu124-vllm0.6.3-ray2.4-te1.7-v0.0.6.
+
+%post
+    set -e # Exit immediately if a command exits with a non-zero status.
+
+    # Ensure essential tools like git are present (needed for git+ installs)
+    # The base image likely has them, but this is safer.
+    apt-get update && apt-get install -y --no-install-recommends \
+        git \
+        ca-certificates \
+        && rm -rf /var/lib/apt/lists/*
+
+    echo ">>> Uninstalling conflicting packages from base image..."
+    # Use || true to prevent build failure if a package is not installed
+    pip3 uninstall pytorch-quantization \
+        pytorch-triton \
+        torch \
+        torch-tensorrt \
+        torchvision \
+        xgboost transformer_engine flash_attn \
+        apex megatron-core -y || echo "Some packages might not have been installed, continuing..."
+
+    echo ">>> Installing specific PyTorch versions for CUDA 12.4..."
+    pip3 install torch==2.4.0 torchvision==0.19.0 torchaudio==2.4.0 --index-url https://download.pytorch.org/whl/cu124
+
+    # =============== Megatron dependencies (optional) =================
+    echo ">>> Installing Apex..."
+    # Set MAX_JOBS specifically for this build step
+    export MAX_JOBS=4
+    pip3 install -v --disable-pip-version-check --no-cache-dir --no-build-isolation \
+        --config-settings "--build-option=--cpp_ext" --config-settings "--build-option=--cuda_ext" \
+        git+https://github.com/NVIDIA/apex
+    unset MAX_JOBS # Unset the variable after use
+    # =============== End of Megatron dependencies (optional) =================
+
+    echo ">>> Installing core dependencies..."
+    pip3 install --no-cache-dir \
+        accelerate \
+        codetiming \
+        datasets \
+        dill \
+        hydra-core \
+        numpy \
+        'pandas' \
+        'peft' \
+        'pyarrow>=15.0.0' \
+        'pybind11' \
+        'pylatexenc' \
+        'ray>=2.10' \
+        'tensordict<0.6' \
+        'transformers' \
+        'vllm==0.6.3.post1' \
+        'wandb'
+
+    echo ">>> Installing full/dev dependencies..."
+    pip3 install --no-cache-dir \
+        pytest \
+        pre-commit \
+        py-spy \
+        pyext \
+        liger-kernel
+
+    # =============== Megatron dependencies (optional) =================
+    echo ">>> Installing Flash Attention (v2.5.8)..."
+    # Set MAX_JOBS and NINJA_FLAGS specifically for this build step
+    export MAX_JOBS=4
+    export NINJA_FLAGS="-j4"
+    pip3 install flash-attn==2.5.8 --no-cache-dir --no-build-isolation
+    unset MAX_JOBS NINJA_FLAGS # Unset variables after use
+
+    echo ">>> Installing Transformer Engine (v1.7.0 from fork)..."
+    # Set MAX_JOBS, NINJA_FLAGS, and TE_BUILD_WITH_NINJA specifically for this build step
+    export MAX_JOBS=1
+    export NINJA_FLAGS="-j1"
+    export TE_BUILD_WITH_NINJA=0
+    pip3 install git+https://github.com/eric-haibin-lin/TransformerEngine.git@v1.7.0
+    unset MAX_JOBS NINJA_FLAGS TE_BUILD_WITH_NINJA # Unset variables after use
+    # =============== End of Megatron dependencies (optional) =================
+
+    echo ">>> Cleaning up pip cache..."
+    rm -rf /root/.cache/pip
+
+    echo ">>> Apptainer setup complete."
+
+%environment
+    # Environment variables from the Dockerfile
+    export MAX_JOBS="32" # Primarily a build-time hint in the Dockerfile, may or may not be used at runtime
+    export VLLM_WORKER_MULTIPROC_METHOD="spawn"
+    # DEBIAN_FRONTEND=noninteractive # Set in %post for build, usually not needed at runtime
+    export NODE_OPTIONS="" # If nodejs is used
+    export PIP_ROOT_USER_ACTION="ignore"
+    export HF_HUB_ENABLE_HF_TRANSFER="1"
+    # Inherit PATH, LD_LIBRARY_PATH etc from the base image by default
+
+%runscript
+    echo "Container based on nvcr.io/nvidia/pytorch:24.05-py3 with vLLM, Apex, TE."
+    echo "Run your commands here, e.g., python your_script.py"
+    exec "$@"
+
+%labels
+    Maintainer "Franz Srambical <franz@pdoom.org>"
+    Version "ngc-th2.4.0-cu124-vllm0.6.3-ray2.4-te1.7-v0.0.6"
+
+    
+
+IGNORE_WHEN_COPYING_START
