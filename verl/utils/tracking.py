@@ -15,7 +15,9 @@
 A unified tracking interface that supports logging data to different backend
 """
 
+import logging
 import dataclasses
+import datetime
 from enum import Enum
 from functools import partial
 from pathlib import Path
@@ -100,7 +102,7 @@ class Tracking:
             self.logger["vemlp_wandb"] = vemlp_wandb
 
         if "tensorboard" in default_backend:
-            self.logger["tensorboard"] = _TensorboardAdapter()
+            self.logger["tensorboard"] = _TensorboardAdapter(config=config)
 
         if "console" in default_backend:
             from verl.utils.logger.aggregate_logger import LocalLogger
@@ -125,15 +127,49 @@ class Tracking:
 
 
 class _TensorboardAdapter:
-    def __init__(self):
+    def __init__(self, config=None):
         import os
 
         from torch.utils.tensorboard import SummaryWriter
 
-        tensorboard_dir = os.environ.get("TENSORBOARD_DIR", "tensorboard_log")
+        base_tensorboard_dir = os.environ.get("TENSORBOARD_DIR", "tensorboard_log")
+        timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+        tensorboard_dir = os.path.join(base_tensorboard_dir, timestamp)
         os.makedirs(tensorboard_dir, exist_ok=True)
         print(f"Saving tensorboard log to {tensorboard_dir}.")
         self.writer = SummaryWriter(tensorboard_dir)
+
+        if config is not None:
+            self.writer.add_hparams(
+                hparam_dict=_TensorboardAdapter._flatten_hydra_config_for_tensorboard(config),
+                metric_dict={},
+                run_name=timestamp,
+            )
+    
+    @staticmethod
+    def _flatten_hydra_config_for_tensorboard(cfg: dict, sep: str = "/") -> dict:
+        flat_params = {}
+
+        def _flatten_recursive(d, parent_key=""):
+            for k, v in d.items():
+                new_key = f"{parent_key}{sep}{k}" if parent_key else k
+                if isinstance(v, dict):
+                    _flatten_recursive(v, new_key)
+                # TensorBoard hparams ideally should be bool, string, float, int, or None.
+                # List and other complex types are not directly supported as individual hparams.
+                # We will convert them to strings.
+                elif isinstance(v, list):
+                    flat_params[new_key] = str(v)
+                elif isinstance(v, (str, int, float, bool)) or v is None:
+                    flat_params[new_key] = v
+                else:
+                    # For any other type, convert to string as a fallback.
+                    # You might want to log a warning or handle specific types differently.
+                    logging.warning(f"Hyperparameter '{new_key}' of type {type(v)} will be stringified: {str(v)[:50]}...")
+                    flat_params[new_key] = str(v)
+        
+        _flatten_recursive(cfg)
+        return flat_params
 
     def log(self, data, step):
         for key in data:
