@@ -188,6 +188,8 @@ def compute_advantage(data: DataProto, adv_estimator, gamma=1.0, lam=1.0, num_re
     # Back-compatible with trainers that do not compute response mask in fit
     if "response_mask" not in data.batch:
         data.batch["response_mask"] = compute_response_mask(data)
+
+    redistribute_reward_implicit = data.meta_info["redistribute_reward_implicit"]
     # prepare response group
     # TODO: add other ways to estimate advantages
     if adv_estimator == AdvantageEstimator.GAE:
@@ -197,6 +199,7 @@ def compute_advantage(data: DataProto, adv_estimator, gamma=1.0, lam=1.0, num_re
             response_mask=data.batch["response_mask"],
             gamma=gamma,
             lam=lam,
+            redistribute_reward_implicit=redistribute_reward_implicit,
         )
         data.batch["advantages"] = advantages
         data.batch["returns"] = returns
@@ -564,7 +567,12 @@ class RayPPOTrainer:
 
         for test_data in self.val_dataloader:
             test_batch = DataProto.from_single_dict(test_data)
-
+            test_batch.meta_info["redistribute_reward"] = (
+                self.config.algorithm.redistribute_reward
+            )
+            test_batch.meta_info["redistribute_reward_implicit"] = (
+                self.config.algorithm.redistribute_reward_implicit
+            )
             # repeat test batch
             test_batch = test_batch.repeat(repeat_times=self.config.actor_rollout_ref.rollout.val_kwargs.n, interleave=True)
 
@@ -886,6 +894,20 @@ class RayPPOTrainer:
                 metrics = {}
                 timing_raw = {}
                 batch: DataProto = DataProto.from_single_dict(batch_dict)
+
+                assert not (
+                    self.config.algorithm.redistribute_reward
+                    and self.config.algorithm.redistribute_reward_implicit
+                ), (
+                    "Only one of `redistribute_reward` and `redistribute_reward_implicit` can be True"
+                )
+
+                batch.meta_info["redistribute_reward"] = (
+                    self.config.algorithm.redistribute_reward
+                )
+                batch.meta_info["redistribute_reward_implicit"] = (
+                    self.config.algorithm.redistribute_reward_implicit
+                )
 
                 # pop those keys for generation
                 batch_keys_to_pop = ["input_ids", "attention_mask", "position_ids"]

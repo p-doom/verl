@@ -70,6 +70,7 @@ def compute_gae_advantage_return(
     response_mask: torch.Tensor,
     gamma: torch.Tensor,
     lam: torch.Tensor,
+    redistribute_reward_implicit=False
 ):
     """Adapted from https://github.com/huggingface/trl/blob/main/trl/trainer/ppo_trainer.py
 
@@ -105,6 +106,14 @@ def compute_gae_advantage_return(
         advantages = torch.stack(advantages_reversed[::-1], dim=1)
 
         returns = advantages + values
+
+        # implicit reward redistribution
+        if redistribute_reward_implicit:
+            # Scale the advantages by (T-t)/T
+            scaling_factors = torch.arange(gen_len, 0, -1, dtype=torch.float32) / gen_len
+            scaling_factors = scaling_factors.unsqueeze(0).expand_as(advantages)
+            advantages *= scaling_factors
+
         advantages = verl_F.masked_whiten(advantages, response_mask)
     return advantages, returns
 

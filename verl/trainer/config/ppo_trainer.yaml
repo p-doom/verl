@@ -214,6 +214,8 @@ algorithm:
     kl_coef: 0.001
     horizon: 10000
     target_kl: 0.1
+  redistribute_reward: False
+  redistribute_reward_implicit: False
 
 trainer:
   balance_batch: True
