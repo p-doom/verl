@@ -83,7 +83,12 @@ class NaiveRewardManager:
             else:
                 reward = score
 
-            reward_tensor[i, valid_response_length - 1] = reward
+            if data_item.meta_info["redistribute_reward"]:
+                token_level_score = reward / valid_response_length
+                reward_tensor[i, :valid_response_length] = token_level_score
+            else:
+                reward_tensor[i, valid_response_length - 1] = reward
+
 
             if data_source not in already_print_data_sources:
                 already_print_data_sources[data_source] = 0

@@ -88,7 +88,13 @@ class BatchRewardManager:
                 reward = score
 
             rewards.append(reward)
-            reward_tensor[i, length - 1] = reward
+            
+            if data[i].meta_info["redistribute_reward"]:
+                token_level_score = reward / valid_response_lengths[i]
+                reward_tensor[i, :valid_response_lengths[i]] = token_level_score
+            else:
+                reward_tensor[i, valid_response_lengths[i] - 1] = reward
+
 
             data_source = data_sources[i]
             if already_printed.get(data_source, 0) < self.num_examine:

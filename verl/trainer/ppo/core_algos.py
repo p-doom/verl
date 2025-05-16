@@ -70,6 +70,7 @@ def compute_gae_advantage_return(
     response_mask: torch.Tensor,
     gamma: torch.Tensor,
     lam: torch.Tensor,
+    redistribute_reward_implicit=False
 ):
     """Adapted from https://github.com/huggingface/trl/blob/main/trl/trainer/ppo_trainer.py
 
@@ -105,6 +106,17 @@ def compute_gae_advantage_return(
         advantages = torch.stack(advantages_reversed[::-1], dim=1)
 
         returns = advantages + values
+
+        # Scale the advantages by (T-t)/T
+        if redistribute_reward_implicit: 
+            # Compute per‐example length T from the response mask
+            lengths = response_mask.sum(dim=1, keepdim=True).to(advantages)
+            # Build a [1, T_max] tensor of time indices
+            time_idx = torch.arange(gen_len, device=advantages.device, dtype=advantages.dtype).unsqueeze(0)
+            # Scale by (T - t) / T and clamp negative values to zero
+            scaling_factors = ((lengths - time_idx) / lengths).clamp(min=0.0)
+            advantages *= scaling_factors
+
         advantages = verl_F.masked_whiten(advantages, response_mask)
     return advantages, returns
 
