@@ -567,12 +567,9 @@ class RayPPOTrainer:
 
         for test_data in self.val_dataloader:
             test_batch = DataProto.from_single_dict(test_data)
-            test_batch.meta_info["redistribute_reward"] = (
-                self.config.algorithm.redistribute_reward
-            )
-            test_batch.meta_info["redistribute_reward_implicit"] = (
-                self.config.algorithm.redistribute_reward_implicit
-            )
+            # Do not redistribute reward on validation for metric compatibility with vanilla
+            test_batch.meta_info["redistribute_reward"] = False
+            test_batch.meta_info["redistribute_reward_implicit"] = False
             # repeat test batch
             test_batch = test_batch.repeat(repeat_times=self.config.actor_rollout_ref.rollout.val_kwargs.n, interleave=True)
 
@@ -895,19 +892,10 @@ class RayPPOTrainer:
                 timing_raw = {}
                 batch: DataProto = DataProto.from_single_dict(batch_dict)
 
-                assert not (
-                    self.config.algorithm.redistribute_reward
-                    and self.config.algorithm.redistribute_reward_implicit
-                ), (
-                    "Only one of `redistribute_reward` and `redistribute_reward_implicit` can be True"
-                )
+                assert not (self.config.algorithm.redistribute_reward and self.config.algorithm.redistribute_reward_implicit), "Only one of `redistribute_reward` and `redistribute_reward_implicit` can be True"
 
-                batch.meta_info["redistribute_reward"] = (
-                    self.config.algorithm.redistribute_reward
-                )
-                batch.meta_info["redistribute_reward_implicit"] = (
-                    self.config.algorithm.redistribute_reward_implicit
-                )
+                batch.meta_info["redistribute_reward"] = self.config.algorithm.redistribute_reward
+                batch.meta_info["redistribute_reward_implicit"] = self.config.algorithm.redistribute_reward_implicit
 
                 # pop those keys for generation
                 batch_keys_to_pop = ["input_ids", "attention_mask", "position_ids"]
